@@ -16,7 +16,7 @@ CHANNELS   = ["POS", "ONLINE", "ATM", "MOBILE"]
 LOCATIONS  = ["New York, USA", "London, UK", "Kathmandu, Nepal", "Tokyo, Japan"]
 AUTH_RESULTS =["APPROVED", "DECLINED", "APPROVED", "APPROVED"]
 
-HIGH_VALUE_THRESHOLD = 10000.00   
+# HIGH_VALUE_THRESHOLD = 10000.00   
 
 
 producer = KafkaProducer(
@@ -47,35 +47,41 @@ def generate_payment() -> dict:
     }
 
 
-def route_payment(payment: dict) -> tuple[str, str]:
+# def route_payment(payment: dict) -> tuple[str, str]:
  
-    if payment["auth_result"] == "DECLINED":
-        return TOPIC_DEADLETTER, "DECLINED transaction"
+#     if payment["auth_result"] == "DECLINED":
+#         return TOPIC_DEADLETTER, "DECLINED transaction"
 
-    if payment["amount"] > HIGH_VALUE_THRESHOLD:
-        return TOPIC_DEADLETTER, f"High-value amount ({payment['amount']})"
+#     if payment["amount"] > HIGH_VALUE_THRESHOLD:
+#         return TOPIC_DEADLETTER, f"High-value amount ({payment['amount']})"
 
-    return TOPIC_RAW, "valid"
+#     return TOPIC_RAW, "valid"
 
 
 if __name__ == "__main__":
-    print("Starting producer  (Ctrl-C to stop)\n")
-    counts = {TOPIC_RAW: 0, TOPIC_DEADLETTER: 0}
+    print("Starting producer \n")
+    counts = 0
 
     try:
         while True:
             print("generating....")
             payment = generate_payment()
             print(f"data generated: {payment}")
-            topic, reason = route_payment(payment)
-            print(topic)
-            print("-----")
-            print(reason)
+            producer.send(TOPIC_RAW, value=payment)
+            counts += 1
+
+            time.sleep(0.5)
+            # print(f"Data sent to {TOPIC_RAW} | ID: {payment['transaction_id']} | Total: {counts}")
 
 
-            producer.send(topic, value=payment)
-            print("Data sent....clear")
-            producer.flush()
+            # print(f"data generated: {payment}")
+            # topic, reason = payment
+            # print(topic)
+            # print("-----")
+            # print(reason)
+            # producer.send(topic, value=payment)
+            # print("Data sent....clear")
+            # producer.flush()
 
     except KeyboardInterrupt:
         print("\nStopping producer...")
@@ -83,4 +89,4 @@ if __name__ == "__main__":
     finally:
         producer.close()
         total = sum(counts.values())
-        print(f"\nSummary — total: {total}  |  raw: {counts[TOPIC_RAW]}  |  dead-letter: {counts[TOPIC_DEADLETTER]}")clear
+        print(f"\nSummary — total: {total}  |  raw: {counts[TOPIC_RAW]}")
