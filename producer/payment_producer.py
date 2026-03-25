@@ -90,3 +90,4 @@ if __name__ == "__main__":
         producer.close()
         total = sum(counts.values())
         print(f"\nSummary — total: {total}  |  raw: {counts[TOPIC_RAW]}")
+        # print(f"Total sent: {counts}")

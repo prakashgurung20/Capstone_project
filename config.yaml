@@ -1,0 +1,20 @@
+kafka:
+  bootstrap_servers: "localhost:9092"
+  input_topic: "payments.raw"
+  deadletter_topic: "payments.deadletter"
+
+fraud_rules:
+  high_amount_threshold: 10000.0
+  velocity_threshold: 5
+  blacklisted_merchants: 
+    - "M11111"
+    - "M22222"
+    - "M_FRAUD_01"
+
+paths:
+  bronze_path: "./data/bronze/payments"
+  checkpoint_path: "./data/checkpoints"
+
+database:
+  url: "jdbc:postgresql://localhost:5432/payments_db"
+  user: "prakash"
