@@ -10,6 +10,7 @@ consumer = KafkaConsumer(
     value_deserializer=lambda v: json.loads(v.decode("utf-8"))
 )
 
+
 print(f"Listening on: {TOPICS}\n")
 print("-" * 60)
 

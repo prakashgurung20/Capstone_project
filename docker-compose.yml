@@ -9,8 +9,31 @@ volumes:
   zk-data:
   zk-log:
   kafka-data:
+  airflow_logs:
+  airflow_plugins:
+
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.9.3
+  networks: [payments-net]
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./jobs:/opt/airflow/jobs
+    - ./data:/opt/airflow/data
+    - airflow_logs:/opt/airflow/logs
+    - airflow_plugins:/opt/airflow/plugins
+  depends_on:
+    postgres:
+      condition: service_healthy
 
 services:
+
+  # ── Zookeeper ────────────────────────────────────────────────
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     container_name: zookeeper
@@ -29,39 +52,136 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── Kafka ─────────────────────────────────────────────────────
   kafka:
     image: confluentinc/cp-kafka:7.5.0
     container_name: kafka
     networks: [payments-net]
     depends_on:
       zookeeper:
-        condition: service_healthy # wait until zookeeper is truly ready
+        condition: service_healthy
     ports:
-      - "9092:9092" # your laptop → Kafka
+      - "9092:9092"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      # Two listeners: one for Docker-internal traffic, one for host machine
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true" # create topics explicitly
-      KAFKA_LOG_RETENTION_HOURS: 72
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
     volumes:
       - kafka-data:/var/lib/kafka/data
     healthcheck:
-      test:
-        [
-          "CMD",
-          "kafka-topics",
-          "--bootstrap-server",
-          "localhost:9092",
-          "--list",
-        ]
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
       interval: 15s
       timeout: 10s
       retries: 10
+
+  # ── Kafka Topic Init ──────────────────────────────────────────
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka-init
+    networks: [payments-net]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: >
+      bash -c "
+        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic payments.raw --partitions 3 --replication-factor 1 &&
+        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic payments.deadletter --partitions 1 --replication-factor 1 &&
+        echo 'Topics created successfully'
+      "
+    restart: "no"
+
+  # ── Payment Producer ──────────────────────────────────────────
+  producer:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: producer
+    container_name: producer
+    networks: [payments-net]
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./data:/app/data
+    environment:
+      - KAFKA_BOOTSTRAP=kafka:29092
+      - PYTHONUNBUFFERED=1
+    command: ["python3", "producer/payment_producer.py"]
+    restart: unless-stopped
+
+  # ── Spark Bronze Streaming ────────────────────────────────────
+  spark-etl:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: spark
+    container_name: spark-etl
+    networks: [payments-net]
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    volumes: 
+      - ./data:/data       
+    environment:
+      - KAFKA_BOOTSTRAP=kafka:29092
+      - PYTHONUNBUFFERED=1
+    command: ["python3", "spark/jobs/bronze_streaming.py",
+          "--kafka-bootstrap", "kafka:29092",
+          "--bronze-path", "/app/data/bronze/payments",
+          "--checkpoint-path", "/app/data/checkpoints"]
+    restart: unless-stopped
+
+  # ── Postgres ──────────────────────────────────────────────────
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    networks: [payments-net]
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Airflow Init ──────────────────────────────────────────────
+  airflow-init:
+    <<: *airflow-common
+    container_name: airflow-init
+    entrypoint: >
+      bash -c "airflow db migrate && airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@payments.com"
+    restart: "no"
+
+  # ── Airflow Scheduler ─────────────────────────────────────────
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow-scheduler
+    command: scheduler
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  # ── Airflow Webserver ─────────────────────────────────────────
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow-webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
