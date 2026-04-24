@@ -16,7 +16,7 @@ CURRENCIES   = ["USD", "EUR", "GBP", "NPR"]
 MCC_CODES    = ["5411", "5812", "4814", "5912"]
 CHANNELS     = ["POS", "ONLINE", "ATM", "MOBILE"]
 LOCATIONS    = ["New York, USA", "London, UK", "Kathmandu, Nepal", "Tokyo, Japan"]
-AUTH_RESULTS = ["APPROVED", "DECLINED", "APPROVED", "APPROVED"]
+AUTH_RESULTS = ["APPROVED", "DECLINED"]
 
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 
@@ -27,7 +27,7 @@ def create_producer(retries: int = 10, delay: int = 5) -> KafkaProducer:
             print(f"[Producer] Connecting to Kafka at {KAFKA_BOOTSTRAP} "
                   f"(attempt {attempt}/{retries})...")
             p = KafkaProducer(
-                bootstrap_servers=KAFKA_BOOTSTRAP,
+                bootstrap_servers= KAFKA_BOOTSTRAP,
                 api_version=(0, 10, 1),
                 value_serializer=lambda v: json.dumps(v).encode("utf-8"),
                 acks="all",
@@ -56,7 +56,7 @@ def generate_payment() -> dict:
 
     return {
         "transaction_id": "TXN" + uuid.uuid4().hex[:12].upper(),
-        "ts_event":       datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "ts_event": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
         "card_hash":      card_hash,
         "merchant_id":    random.choice(MERCHANTS),
         "amount":         amount,
