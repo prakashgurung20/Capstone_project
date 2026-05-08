@@ -5,7 +5,7 @@ networks:
     driver: bridge
 
 volumes:
-  # postgres_data:
+  postgres_data:
   zk-data:
   zk-log:
   kafka-data:
@@ -123,23 +123,23 @@ services:
     restart: unless-stopped
 
   # ── Postgres ──────────────────────────────────────────────────
-  # postgres:
-  #   image: postgres:16
-  #   container_name: postgres
-  #   networks: [payments-net]
-  #   ports:
-  #     - "5432:5432"
-  #   environment:
-  #     POSTGRES_USER: airflow
-  #     POSTGRES_PASSWORD: airflow
-  #     POSTGRES_DB: airflow
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
-  #   healthcheck:
-  #     test: ["CMD", "pg_isready", "-U", "airflow"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    networks: [payments-net]
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: payments_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # # ── Airflow Init ──────────────────────────────────────────────
   # airflow-init:

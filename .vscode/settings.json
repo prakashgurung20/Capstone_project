@@ -1,0 +1,15 @@
+{
+    "sqltools.connections": [
+        {
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 5432,
+            "driver": "PostgreSQL",
+            "name": "capstone_db",
+            "database": "payments_db",
+            "username": "postgres",
+            "password": "postgres"
+        }
+    ]
+}
