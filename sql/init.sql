@@ -1,3 +1,0 @@
- 
-CREATE DATABASE payments_db;
-GRANT ALL PRIVILEGES ON DATABASE payments_db TO airflow;
